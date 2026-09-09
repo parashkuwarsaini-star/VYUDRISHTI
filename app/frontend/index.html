@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VYUDRISHTI: Adaptive Causal AI for Smart Frequency Scanning</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="hud-header">
+    <div class="header-left">
+      <div class="drdo-logo">DRDO</div>
+      <div class="title-group">
+        <h1>VYUDRISHTI</h1>
+        <p>Adaptive Causal AI for Smart Frequency Scanning</p>
+      </div>
+      <div class="badge-tag">CAUSAL AI + RL SCHEDULER</div>
+      <div class="badge-proto">SIMULATION-BASED PROTOTYPE</div>
+    </div>
+
+    <div class="header-right">
+      <div class="mode-selector">
+        <button id="btnModeReplay" class="mode-btn active" onclick="setDemoMode('VALIDATED_REPLAY')" title="Pre-recorded operational demonstration scenario">DEMO MODE</button>
+        <button id="btnModeLive" class="mode-btn" onclick="setDemoMode('LIVE_MODEL_INFERENCE')" title="Real GRU + real V73 DQN forward inference using causal history">LIVE NEURAL INFERENCE</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Top Telemetry Strip -->
+  <section class="telemetry-strip">
+    <div class="telemetry-card highlight">
+      <div class="label">Time Step</div>
+      <div class="value" id="valTimeStep">t = 0 / 500</div>
+    </div>
+    <div class="telemetry-card highlight">
+      <div class="label">Current Scan</div>
+      <div class="value" id="valSelectedBand">Band 0</div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Receiver Outcome</div>
+      <div class="value" id="valResultBadge"><span class="badge-clean">CLEAN (0)</span></div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Measured In-Band SNR</div>
+      <div class="value" id="valMeasuredSNR">-- dB</div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Step Reward</div>
+      <div class="value" id="valReward">0.00</div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Overall Pd</div>
+      <div class="value" id="valPdOverall">0.0 %</div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Scanned Pd</div>
+      <div class="value" id="valPdScanned">0.0 %</div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Pfa (False Alarm)</div>
+      <div class="value" id="valPfa">0.00 %</div>
+    </div>
+    <div class="telemetry-card">
+      <div class="label">Jain's Fairness</div>
+      <div class="value" id="valFairness">100.0 %</div>
+    </div>
+  </section>
+
+  <!-- Navigation Tabs -->
+  <nav class="tabs-nav">
+    <button class="tab-btn active" onclick="switchTab('tabLiveOps')">TACTICAL SPECTRUM HUD</button>
+    <button class="tab-btn" onclick="switchTab('tabBenchmarks')">SIMULATION BENCHMARK RESULTS</button>
+    <button class="tab-btn" onclick="switchTab('tabAblation')">DOES TEMPORAL PREDICTION HELP?</button>
+    <button class="tab-btn" onclick="switchTab('tabArchitecture')">SYSTEM ARCHITECTURE</button>
+  </nav>
+
+  <!-- TAB 1: Main Tactical HUD -->
+  <main id="tabLiveOps" class="tab-content active">
+    <div class="dashboard-container">
+      
+      <!-- Left Column: Hero Waterfall & Receiver -->
+      <div class="dash-col-left">
+        
+        <div class="hud-panel">
+          <div class="panel-header">
+            <h2>RF SPECTRUM WATERFALL (5 FREQUENCY BANDS)</h2>
+            <div class="sub-badge" id="modeNotice">Mode: Demo Mode</div>
+          </div>
+          <div class="panel-body">
+            
+            <div class="waterfall-hero-container">
+              <!-- Top Label -->
+              <div class="waterfall-header-strip">
+                <span class="layer-tag tag-ground-truth">Simulation Truth — Not Available to Scheduler</span>
+                <span style="font-size: 10px; color: #94a3b8;">True Emitter Activity Mask across Bands 0–4</span>
+              </div>
+
+              <!-- Canvas Waterfall -->
+              <canvas id="waterfallCanvas" width="900" height="260"></canvas>
+
+              <!-- Causal Information Boundary Banner -->
+              <div class="causal-boundary-banner">
+                <div class="causal-boundary-title">─── CAUSAL INFORMATION BOUNDARY ───</div>
+                <div class="causal-chain-flow">
+                  <span>PAST RECEIVER OBSERVATIONS</span>
+                  <span class="arrow">──►</span>
+                  <span>MULTI-HORIZON GRU</span>
+                  <span class="arrow">──►</span>
+                  <span>FUTURE ACTIVITY FORECAST</span>
+                  <span class="arrow">──►</span>
+                  <span>V73 DQN</span>
+                  <span class="arrow">──►</span>
+                  <span>NEXT BAND SELECTION</span>
+                </div>
+                <div class="causal-disclaimer-sub">GROUND TRUTH IS USED ONLY INSIDE THE SIMULATED RECEIVER TO DETERMINE SCAN OUTCOME. SCHEDULER OPERATES STRICTLY ON INFORMATION UP TO TIMESTEP t.</div>
+              </div>
+
+              <div class="waterfall-header-strip">
+                <span class="layer-tag tag-receiver-obs">Causal Receiver Observation</span>
+                <span style="font-size: 10px; color: #94a3b8;">Observed Exclusively on Tuned Band (Unscanned Channels Remain Dark)</span>
+              </div>
+
+              <div class="waterfall-legend">
+                <div class="legend-item"><span class="legend-dot" style="background: #dc2626;"></span> Ground Truth Emitter</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #10b981;"></span> Scanned HIT (+1)</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #f59e0b;"></span> Scanned MISS (Low SNR)</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #334155;"></span> Scanned CLEAN (0)</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span> Scanned FALSE ALARM (-1)</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #00f0ff;"></span> Receiver Tuning Cursor</div>
+              </div>
+            </div>
+
+            <!-- Simulated Receiver Scan Result -->
+            <div class="receiver-summary">
+              <div class="receiver-status-card">
+                <div class="res-title">SIMULATED RECEIVER SCAN OUTCOME</div>
+                <div class="res-badge-large" id="bigResultBadge">CLEAN (0)</div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;" id="subResultText">Channel Quiet (Noise Floor)</div>
+              </div>
+              <div class="snr-meter-container">
+                <div class="snr-header">
+                  <span>Measured In-Band SNR</span>
+                  <span id="meterSnrVal">-- dB</span>
+                </div>
+                <div class="snr-bar-wrapper">
+                  <div class="snr-bar-fill" id="snrBarFill"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #64748b; margin-top: 4px;">
+                  <span>-15 dB</span>
+                  <span>0 dB (Threshold)</span>
+                  <span>+35 dB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Playback Controls -->
+            <div class="controls-bar">
+              <button id="btnPlayPause" class="ctrl-btn primary" onclick="togglePlayPause()">▶ START</button>
+              <button class="ctrl-btn" onclick="stepBackward()">⏮ STEP BACK</button>
+              <button class="ctrl-btn" onclick="stepForward()">⏭ STEP</button>
+              <button class="ctrl-btn" onclick="resetPlayback()">↻ RESET</button>
+              
+              <div class="timeline-slider-group">
+                <span style="font-size: 11px; color: #94a3b8; font-family: monospace;">t:</span>
+                <input type="range" id="timelineSlider" min="0" max="499" value="0" oninput="onSliderInput(this.value)">
+                <span id="sliderStepVal" style="font-size: 11px; color: #00f0ff; font-family: monospace; min-width: 45px;">t=0</span>
+              </div>
+
+              <select class="speed-select" id="speedSelector" onchange="setPlaybackSpeed(this.value)">
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="5" selected>5×</option>
+                <option value="10">10×</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: AI Brain & Decision Core -->
+      <div class="dash-col-right">
+        
+        <!-- Multi-Horizon GRU Forecaster Panel -->
+        <div class="hud-panel">
+          <div class="panel-header">
+            <h2>MULTI-HORIZON TEMPORAL GRU FORECASTER</h2>
+            <div class="sub-badge">44,628 Params • 2-Layer GRU</div>
+          </div>
+          <div class="panel-body">
+            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 6px;">
+              Prediction generated from the previous 10 receiver timesteps:
+            </div>
+            
+            <table class="gru-table">
+              <thead>
+                <tr>
+                  <th>FREQUENCY BAND</th>
+                  <th>H+1 (t+1)</th>
+                  <th>H+3 (t+3)</th>
+                  <th>H+5 (t+5)</th>
+                  <th>H+10 (t+10)</th>
+                </tr>
+              </thead>
+              <tbody id="gruTableBody">
+                <!-- Populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- V73 DQN Decision Panel -->
+        <div class="hud-panel">
+          <div class="panel-header">
+            <h2>V73 CAUSAL DQN SCHEDULER POLICY</h2>
+            <div class="sub-badge">85,253 Params • 170-D State</div>
+          </div>
+          <div class="panel-body">
+            
+            <div class="next-action-banner">
+              <div class="label">NEXT ACTION:</div>
+              <div class="action-highlight" id="bannerSelectedBand">SCAN BAND 0</div>
+              <div style="font-family: monospace; font-size: 12px; color: #00f0ff;" id="bannerMaxQ">Q = 6.85</div>
+            </div>
+
+            <div class="q-bars-list" id="qBarsListContainer">
+              <!-- Q-value bars populated via JS -->
+            </div>
+
+            <div class="why-signals-box">
+              <div class="why-signals-title">WHY? Relevant Causal State Signals:</div>
+              <div id="whySignalsContent" style="font-size: 10px; line-height: 1.4; color: #cbd5e1;">
+                Band has highest state-action value.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Demo Story Panel -->
+        <div class="hud-panel">
+          <div class="panel-header">
+            <h2>DEMO STORY (CURRENT TIMESTEP NARRATIVE)</h2>
+            <div class="sub-badge">Causal Execution Flow</div>
+          </div>
+          <div class="panel-body">
+            <div class="story-panel-body" id="storyPanelContent">
+              <!-- Dynamically populated via JS -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- TAB 2: Benchmark Evaluation Tab -->
+  <section id="tabBenchmarks" class="tab-content">
+    <div class="hud-panel">
+      <div class="panel-header">
+        <h2>SIMULATION BENCHMARK RESULTS (40 RF ENVIRONMENTS / 240 EVALUATION EPISODES)</h2>
+        <div class="sub-badge">Consolidated Evaluation Metrics</div>
+      </div>
+      <div class="panel-body">
+        
+        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 12px;">
+          Note: 40 controlled RF environments / 240 evaluation episodes. Simulation benchmark comparing cognitive RL schedulers against non-cognitive spectrum baselines.
+        </p>
+
+        <!-- Honest Winner Highlight Cards -->
+        <div class="winners-grid">
+          <div class="winner-card v73">
+            <div class="w-method">★ V73 CAUSAL DQN (PROPOSED)</div>
+            <div class="w-desc">
+              <strong>Highest Common Reward (164.48 &plusmn; 12.7)</strong><br>
+              Optimal balance of threat detection and band coverage fairness (91.67%). Prevents channel starvation with 14.34% min scan share.
+            </div>
+          </div>
+          <div class="winner-card">
+            <div class="w-method">★ V70 DQN</div>
+            <div class="w-desc">
+              <strong>Highest Overall Pd (18.43 &plusmn; 2.1%)</strong><br>
+              Lowest mean interception delay (1.76 &plusmn; 0.25 steps), achieved at the cost of reduced fairness (86.58%).
+            </div>
+          </div>
+          <div class="winner-card">
+            <div class="w-method">★ ROUND ROBIN</div>
+            <div class="w-desc">
+              <strong>Highest Interception Rate (58.85%) & Fairness (100.0%)</strong><br>
+              Lowest Pfa (0.85%), but suffers from lower total reward (153.09) and lack of cognitive threat adaptation.
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-size: 11px; color: #00f0ff; text-transform: uppercase; margin-bottom: 6px;">Consolidated Benchmark Summary Table</h3>
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Scheduling Algorithm</th>
+              <th>Cumulative Reward</th>
+              <th>Hits</th>
+              <th>Overall Pd</th>
+              <th>Scanned Pd</th>
+              <th>Pfa (False Alarm)</th>
+              <th>Interception Rate</th>
+              <th>Mean Delay (steps)</th>
+              <th>Jain's Fairness</th>
+            </tr>
+          </thead>
+          <tbody id="benchmarkTableBody">
+            <!-- Populated via JS -->
+          </tbody>
+        </table>
+
+        <div style="margin-top: 18px;">
+          <h3 style="font-size: 11px; color: #00f0ff; text-transform: uppercase; margin-bottom: 6px;">Pairwise Improvements of V73 Causal DQN (Baseline Comparisons)</h3>
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Comparison</th>
+                <th>Reward Delta</th>
+                <th>Pd Delta (pp)</th>
+                <th>Pfa Delta (pp)</th>
+                <th>Intercept Delta (pp)</th>
+                <th>Delay Delta (steps)</th>
+                <th>Fairness Delta (pp)</th>
+              </tr>
+            </thead>
+            <tbody id="comparisonsTableBody">
+              <!-- Populated via JS -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 3: Does Temporal Prediction Help? -->
+  <section id="tabAblation" class="tab-content">
+    <div class="hud-panel">
+      <div class="panel-header">
+        <h2>DOES TEMPORAL PREDICTION ACTUALLY HELP? (GRU ABLATION STUDY)</h2>
+        <div class="sub-badge">Paired Ablation Analysis</div>
+      </div>
+      <div class="panel-body">
+        
+        <p style="font-size: 12px; color: #94a3b8;">
+          Controlled paired ablation across 40 matched RF environments comparing <strong>V73 With GRU</strong> vs <strong>V73 Without GRU</strong>.
+        </p>
+
+        <div class="ablation-grid" id="ablationGridContainer">
+          <!-- Populated via JS -->
+        </div>
+
+        <div style="background: #080d1a; border: 1px solid #1c2b48; border-radius: 5px; padding: 12px; margin-top: 14px;">
+          <h4 style="font-size: 11px; color: #00f0ff; text-transform: uppercase; margin-bottom: 4px;">Scientifically Important Finding</h4>
+          <p style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+            "The scanned-cell Pd is essentially unchanged (78.61% with GRU vs 78.67% without GRU), indicating that the gain comes primarily from <strong>better scan allocation rather than improved receiver physics</strong>."
+          </p>
+          <p style="font-size: 11px; color: #94a3b8; margin-top: 6px;">
+            By forecasting where agile threats will transmit next, the scheduler allocates receiver time slots preemptively, increasing cumulative mission reward by <strong>+13.99 points (+9.47%)</strong>, intercepting <strong>+6.90 more threat bursts (+4.36%)</strong>, and improving band fairness by <strong>+3.60 percentage points</strong> without requiring wider RF front-end hardware.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 4: Architecture & Technical Details -->
+  <section id="tabArchitecture" class="tab-content">
+    <div class="hud-panel">
+      <div class="panel-header">
+        <h2>END-TO-END CAUSAL PIPELINE & SECURITY FIREWALL</h2>
+        <div class="sub-badge">DRDO / SIH 26055 Formal Specification</div>
+      </div>
+      <div class="panel-body">
+        
+        <div style="background: #040711; border: 1px solid var(--border-color); padding: 14px; border-radius: 6px; font-family: var(--font-mono); font-size: 11px; color: #94a3b8; line-height: 1.5; overflow-x: auto;">
+RF ENVIRONMENT (Ground Truth Emitter Mask & Hidden In-Band SNR across 5 Bands)
+      │
+      ▼
+LIMITED-BAND RECEIVER FRONT-END (Tunes strictly to 1 Band per Step)
+      │
+      ▼
+SIMULATED RECEIVER SCAN (HIT / MISS / CLEAN / FALSE ALARM + Measured In-Band SNR)
+      │
+      ▼
+CAUSAL HISTORY BUFFER H_t in R^(10 x 10) [Interleaved Observation & Scan Flags]
+      │
+      ▼
+2-LAYER GRU (Hidden Size 64 -> Forecasts Horizons H+1, H+3, H+5, H+10 across all 5 Bands)
+      │
+      ▼
+170-D SCHEDULER STATE s_t (100-D Buffer + 70-D Band Metrics & Forecasts)
+      │
+      ▼
+V73 DQN POLICY (4-Layer MLP: 170 -> 256 -> 128 -> 64 -> 5)
+      │
+      ▼
+NEXT FREQUENCY BAND SELECTION a_(t+1) = argmax_b Q(s_t, b)
+      │
+      ▼
+COMMAND RECEIVER TUNING & FEEDBACK (Closed-Loop Causal Scheduling)
+        </div>
+
+        <!-- Expandable Technical Details -->
+        <details style="margin-top: 14px; background: #090e1c; border: 1px solid var(--border-color); border-radius: 5px; padding: 10px;">
+          <summary style="font-size: 11px; font-weight: 700; color: var(--accent-cyan); cursor: pointer; text-transform: uppercase;">
+            ▶ Click to Expand Technical Model & Data Details
+          </summary>
+          <div style="margin-top: 10px; font-size: 11px; color: #cbd5e1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div>
+              <strong style="color: #00f0ff;">V73 Scalable Causal DQN:</strong>
+              <ul style="margin-top: 4px; padding-left: 16px; line-height: 1.6; color: #94a3b8;">
+                <li>Architecture: 170 → 256 → 128 → 64 → 5 (ReLU activations)</li>
+                <li>Parameters: 85,253 parameters</li>
+                <li>Input: 170-dimensional causal state vector</li>
+                <li>Output: 5 Q-values for Frequency Bands 0–4</li>
+                <li>File: <code>models/best_dqn_scalable_v73.pt</code> (344 KB)</li>
+              </ul>
+            </div>
+            <div>
+              <strong style="color: #00f0ff;">Multi-Horizon Activity GRU:</strong>
+              <ul style="margin-top: 4px; padding-left: 16px; line-height: 1.6; color: #94a3b8;">
+                <li>Architecture: 2-layer GRU (hidden size 64) + MLP head + Sigmoid</li>
+                <li>Parameters: 44,628 parameters</li>
+                <li>Input: 10 timesteps × 10 features (interleaved [obs, scan] per band)</li>
+                <li>Output: 20 probabilities (5 bands × 4 horizons: H+1, H+3, H+5, H+10)</li>
+                <li>File: <code>models/multi_horizon_activity_gru.pt</code> (185 KB)</li>
+              </ul>
+            </div>
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer Disclaimer -->
+  <footer class="hud-footer">
+    Simulation-based prototype. Results are from controlled synthetic RF environments and are not field-validation results.
+  </footer>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
